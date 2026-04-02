@@ -1,4 +1,4 @@
-# ARMS-Hybrid-ERP
+# ARMS (AI Powered Result Management System) - Hybrid AI-ERP 
 Author: Fahim Montasir (ICT'19, MBSTU)
 
 ## Project Overview
@@ -14,17 +14,25 @@ Database: MySQL (Relational Storage)
 
 AI Integration: Groq Cloud (Llama 3.3) / RAG Implementation
 
-Security: JWT Authentication & OTP-based Faculty Login
+Security: JWT Authentication & OTP (via email) based Faculty Login
 
 ## Key Features
 
-Automated Processing: Real-time GPA/CGPA calculation on mark entry.
+#### Automated Processing: 
+Real-time GPA/CGPA calculation immediately upon mark entry, eliminating manual computation errors.
 
-Predictive Analytics: Early detection of "At-Risk" students via the AI Brain.
+#### Predictive Analytics: 
+Early detection of "At-Risk" students via the AI Brain, allowing faculty to intervene before the final semester results.
 
-Hybrid Architecture: Decoupled services for high scalability and performance.
+#### Conversational Intelligence: 
+Replaces traditional, complex filter buttons with a Chat-based Query System. Users can ask, "Show me students with GPA below 2.5 in ICT-4101," and get instant results.
 
-Secure Reporting: Generates professional Legal-size PDF Marksheets.
+#### Hybrid Architecture: 
+Decoupled services (Django + FastAPI) for high scalability, ensuring the AI logic doesn't slow down the core database.
+
+#### Secure Reporting: 
+Generates professional, department-standard Legal-size PDF Marksheets and automated Resultsheets for official use.
+
 
 ## Installation & Setup
 
