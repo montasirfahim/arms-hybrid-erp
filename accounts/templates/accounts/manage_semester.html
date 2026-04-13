@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6">
+    <div class="flex justify-between items-center mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Manage Semester: {{ semester.name }} ({{ batch.session }})</h1>
+        </div>
+        <a href="{% url 'batch_details' batch.id %}" class="text-blue-600 hover:text-blue-800">Back to Batch Details</a>
+    </div>
+
+    {% if messages %}
+        <div class="mb-4 space-y-2">
+            {% for message in messages %}
+                <div class="px-4 py-2 rounded text-sm {% if message.tags == 'success' %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="space-y-4">
+        {% if semester.result_status %}
+        <div class="bg-white rounded-lg shadow p-4" id="result-div">
+            <h2 class="text-lg font-semibold my-2">Result</h2>
+            <div class="flex flex-wrap gap-2 justify-center">
+                {% if semester.name == "1st Semester" %}
+                    <a href="{% url 'export_semester_result' semester.id 'Both' %}"
+                       class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-medium">
+                       Download Result Sheet
+                    </a>
+
+                {% elif semester.name == "2nd Semester" %}
+                    <a href="{% url 'export_semester_result' semester.id 'M.Sc' %}"
+                       class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-medium">
+                       Download M.Sc Result Sheet
+                    </a>
+
+                    <a href="{% url 'export_semester_result' semester.id 'M.Engg' %}"
+                       class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-medium">
+                       Download M.Engg Result Sheet
+                    </a>
+                 {% elif semester.name == "3rd Semester" %}
+                    <a href="{% url 'export_semester_result' semester.id 'M.Engg' %}"
+                       class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-medium">
+                       Download M.Engg Result Sheet
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif%}
+        <!-- Add Course Section -->
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="flex justify-end items-center mb-4">
+               <button
+                    id="add-course-btn"
+                    type="button"
+                    {% if semester.result_status %}
+                        disabled
+                        class="px-3 py-1.5 bg-gray-400 text-white rounded cursor-not-allowed text-sm"
+                    {% else %}
+                        onclick="document.getElementById('course-form').classList.toggle('hidden');"
+                        class="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                    {% endif %}
+               >
+                    Add New Course
+                </button>
+            </div>
+
+            <div id="course-form" class="hidden mb-4 bg-gray-50 border border-gray-200 rounded p-3">
+                <form method="post" action="{% url 'manage_semester' batch.id semester.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_course">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                        <input type="text" name="course_code" placeholder="Course Code (e.g., ICT5101)" class="border rounded px-3 py-2 w-full" required>
+                        <input type="text" name="title" placeholder="Course Title" class="border rounded px-3 py-2 w-full" required>
+                        <input type="number" name="credit_hour" placeholder="Credit Hours (default: 3.00)" min="0.01" step="0.01" class="border rounded px-3 py-2 w-full">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+<!--                        <select name="course_type" class="border rounded px-3 py-2 w-full" required>-->
+<!--                            <option value="Theory">Select Course Type</option>-->
+<!--                            <option value="Theory">Theory</option>-->
+<!--                            <option value="Thesis">Thesis</option>-->
+<!--                            <option value="Project">Project</option>-->
+<!--                        </select>-->
+                        <select name="target_student" class="border rounded px-3 py-2 w-full" required>
+                            <option value="">Select Target Group</option>
+                            <option value="M.Sc">M.Sc</option>
+                            <option value="M.Engg">M.Engg</option>
+                            <option value="Both">Both</option>
+                        </select>
+                        <select name="course_teacher" class="border rounded px-3 py-2 w-full">
+                            <option value="">Select Course Teacher</option>
+                            {% for teacher in teachers %}
+                                <option value="{{ teacher.id }}">{{ teacher.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mt-3">
+                        <button type="submit" class="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Save Course</button>
+                    </div>
+                </form>
+            </div>
+
+            <h2 class="text-lg font-semibold my-4">Courses</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Course Code</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Title</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Credit Hours</th>
+                             <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Target Group</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Course Teacher</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Marks Entry</th>
+                            <th class="px-4 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% if theory_courses.exists %}
+                            {% for course in theory_courses %}
+                            <tr>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ course.course_code }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ course.title }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ course.credit_hour|floatformat:2 }}</td>
+                                 <td class="px-4 py-2 text-sm text-gray-700">{{ course.target_student }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ course.course_teacher.name|default:'(none)' }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-700">
+                                    {% if course.marks_input_status %}
+                                        <span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">Completed</span>
+
+                                    {% else %}
+                                        <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Incomplete</span>
+                                    {% endif %}
+                                </td>
+                                <td class="px-4 py-2 text-right">
+                                    {% if course.course_teacher.id == current_user_id or semester.committee_chairman.id == current_user_id %}
+                                        <a href="{% url 'input_marks' batch.id semester.id course.id %}" class="text-indigo-600 hover:text-indigo-800 text-sm">Input Marks</a>
+                                    {% else %}
+                                        <span class="text-gray-400 text-sm cursor-not-allowed">Input Marks</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr><td colspan="5" class="px-4 py-4 text-center text-gray-500">No theory courses yet.</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Registered Student Section -->
+        <div class="bg-white rounded-lg shadow p-4">
+            <h2 class="text-lg font-semibold mb-4">Registered Students</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Student ID</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Email</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Group</th>
+                            <th class="px-4 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% if registered_students %}
+                            {% for reg in registered_students %}
+                            <tr>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ reg.student.student_id }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ reg.student.name }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ reg.student.email|default:'-' }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-700">{{ reg.student.group }}</td>
+                                <td class="px-4 py-2 text-right text-sm">
+                                    <form method="post" action="{% url 'delete_registered_student' batch.id semester.id reg.id %}" onsubmit="return confirm('Are you sure you want to remove this student from this semester?');" style="display:inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="text-red-600 hover:text-red-800">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="5" class="px-4 py-4 text-center text-gray-500">No students registered for this semester.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

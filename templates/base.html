@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ARMS ERP{% endblock %}</title>
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://tailwindcss.com"></script>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="..." crossorigin="anonymous" />
+    <link href="https://cloudflare.com" rel="stylesheet">
+    <style>
+        body { background-color: #F0F4F8; font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body>
+    <!-- Navbar - Hidden on login page -->
+    {% if request.resolver_match.url_name != 'login' %}
+    <nav class="bg-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Left Side - Brand Name -->
+                <div class="flex items-center">
+                    <a href="{% url 'home' %}" class="text-2xl font-bold text-blue-600 hover:text-blue-800 transition-colors duration-200">ARMS</a>
+                </div>
+                <!-- Right Side - Buttons -->
+                <div class="flex items-center space-x-4">
+                    <a id="dashboardBtn" href="{% url 'dashboard' %}" class="px-4 py-2 text-gray-700 hover:text-blue-600 font-medium transition-colors duration-200">
+                        Dashboard
+                    </a>
+                    <button id="logoutBtn" class="px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors duration-200">
+                        Logout
+                    </button>
+                    <a id="loginLink" href="{% url 'login' %}" class="px-4 py-1.5 text-gray-700 hover:text-blue-600 font-medium transition-colors duration-200 hidden">
+                        Login
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main>
+        {% block content %}
+        <!-- Page specific content goes here -->
+        {% endblock %}
+    </main>
+
+    <!-- Navbar Scripts - Only on non-login pages -->
+    {% if request.resolver_match.url_name != 'login' %}
+    <script>
+        // Check login status on page load
+        function checkLoginStatus() {
+            const accessToken = localStorage.getItem('access_token');
+            const dashboardBtn = document.getElementById('dashboardBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const loginLink = document.getElementById('loginLink');
+
+            if (accessToken) {
+                // User is logged in
+                dashboardBtn.style.display = 'block';
+                logoutBtn.style.display = 'block';
+                loginLink.style.display = 'none';
+            } else {
+                // User is not logged in
+                dashboardBtn.style.display = 'none';
+                logoutBtn.style.display = 'none';
+                loginLink.style.display = 'block';
+            }
+        }
+
+        // Handle logout
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            const refreshToken = localStorage.getItem('refresh_token');
+
+            try {
+                // Call logout API
+                await fetch('{% url "api_logout" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        refresh: refreshToken,
+                    }),
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+
+            // Clear localStorage
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user_data');
+
+            // Redirect to login
+            window.location.href = '{% url "login" %}';
+        });
+
+        // Run on page load
+        window.addEventListener('load', checkLoginStatus);
+    </script>
+    {% endif %}
+
+    {% if request.resolver_match.url_name != 'login' %}
+    <!-- Floating AI chat widget -->
+    <div class="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2">
+        <button id="floating-chat-btn" aria-label="Open AI chat" class="relative bg-gradient-to-br from-violet-600 to-pink-500 text-white rounded-full w-14 h-14 shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+            <i class="fas fa-comments text-xl"></i>
+            <span class="absolute -top-1 -right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-red-100 bg-red-500 rounded-full">Ask AI</span>
+        </button>
+
+        <div id="floating-chat-panel" class="hidden w-80 sm:w-96 min-h-[400px] max-h-[450px] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="bg-gradient-to-br from-indigo-900 to-purple-900 text-white px-3 py-3 flex justify-between items-center border-b border-slate-700">
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    <span class="font-semibold tracking-wide">ARMS AI Assistant</span>
+                </div>
+                <div class="flex gap-2">
+                    <button id="minimize-chat-btn" class="text-slate-300 hover:text-white transition-colors" aria-label="Minimize chat" title="Minimize">
+                        <i class="fas fa-minus text-xs"></i>
+                    </button>
+                    <button id="close-chat-btn" class="text-slate-300 hover:text-white transition-colors" aria-label="Close and clear chat" title="Close and clear history">
+                        <i class="fas fa-times text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="floating-chat-dialog" class="flex-1 p-4 overflow-y-auto space-y-4 text-sm bg-slate-800 scrollbar-thin scrollbar-thumb-slate-700"></div>
+            
+            <div id="floating-chat-status" class="text-[10px] text-slate-400 px-3 py-1 bg-slate-900 border-t border-slate-800">
+                System: Ready to assist.
+            </div>
+
+            <form id="floating-chat-form" class="px-3 py-3 border-t border-slate-700 bg-slate-900 flex gap-2">
+                <input id="floating-chat-input" type="text" placeholder="Type your query here..." 
+                    class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all" required>
+                <button type="submit" class="p-2 bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg flex items-center justify-center w-10">
+                    <i class="fas fa-paper-plane text-xs"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- <script src="js/base.js"></script> -->
+
+    <script>
+        const floatingChatBtn = document.getElementById('floating-chat-btn');
+        const closeChatBtn = document.getElementById('close-chat-btn');
+        const minimizeChatBtn = document.getElementById('minimize-chat-btn');
+        const floatingChatPanel = document.getElementById('floating-chat-panel');
+        const floatingChatDialog = document.getElementById('floating-chat-dialog');
+        const floatingChatForm = document.getElementById('floating-chat-form');
+        const floatingChatInput = document.getElementById('floating-chat-input');
+        const floatingChatStatus = document.getElementById('floating-chat-status');
+
+        const CHAT_STORAGE_KEY = 'arms_ai_chat_history';
+        const CHAT_STATE_KEY = 'arms_ai_chat_state'; // 'open' or 'minimized'
+
+        // Load chat history from localStorage
+        function loadChatHistory() {
+            const stored = localStorage.getItem(CHAT_STORAGE_KEY);
+            return stored ? JSON.parse(stored) : [];
+        }
+
+        // Save chat history to localStorage
+        function saveChatHistory(history) {
+            localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(history));
+        }
+
+        // Load chat state from localStorage
+        function loadChatState() {
+            return localStorage.getItem(CHAT_STATE_KEY) || 'closed';
+        }
+
+        // Save chat state to localStorage
+        function saveChatState(state) {
+            localStorage.setItem(CHAT_STATE_KEY, state);
+        }
+
+        // Restore chat history on page load
+        function restoreChatUI() {
+            const history = loadChatHistory();
+            const state = loadChatState();
+
+            // Clear dialog
+            floatingChatDialog.innerHTML = '';
+
+            // Repopulate messages
+            history.forEach(msg => {
+                appendFloatingMessage(msg.role === 'user' ? 'user' : 'ai', msg.content);
+            });
+
+            // Restore panel visibility
+            if (state === 'open') {
+                floatingChatPanel.classList.remove('hidden');
+                floatingChatInput.focus();
+            } else if (state === 'minimized') {
+                floatingChatPanel.classList.add('hidden');
+            }
+        }
+
+        let chatHistory = loadChatHistory();
+
+        floatingChatBtn.addEventListener('click', () => {
+            const isHidden = floatingChatPanel.classList.toggle('hidden');
+            saveChatState(isHidden ? 'minimized' : 'open');
+            if (!isHidden) {
+                floatingChatInput.focus();
+            }
+        });
+
+        minimizeChatBtn.addEventListener('click', () => {
+            floatingChatPanel.classList.add('hidden');
+            saveChatState('minimized');
+        });
+
+        closeChatBtn.addEventListener('click', () => {
+            floatingChatPanel.classList.add('hidden');
+            // Clear chat history
+            chatHistory = [];
+            floatingChatDialog.innerHTML = '';
+            localStorage.removeItem(CHAT_STORAGE_KEY);
+            saveChatState('closed');
+            floatingChatStatus.textContent = 'Chat cleared. Ready to chat. (Beta)';
+        });
+
+        function appendFloatingMessage(sender, text, isLoader = false) {
+            const container = document.createElement('div');
+            container.className = sender === 'user' ? 'flex justify-end' : 'flex justify-start';
+            
+            const item = document.createElement('div');
+            item.className = sender === 'user' 
+                ? 'max-w-[85%] bg-indigo-600 text-white rounded-2xl rounded-tr-none px-4 py-2 shadow-lg' 
+                : 'max-w-[85%] bg-slate-700 text-slate-100 border border-slate-600 rounded-2xl rounded-tl-none px-4 py-2 shadow-lg';
+            
+            if (isLoader) {
+                item.id = 'chat-loader';
+                item.className = 'max-w-[80%] bg-slate-700 text-slate-300 border border-slate-600 rounded-2xl rounded-tl-none px-4 py-2 shadow-lg';
+                item.innerHTML = `<div class="flex gap-1.5 items-center py-1"><span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span><span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]"></span><span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.4s]"></span></div>`;
+            } else {
+                item.innerHTML = `<div class="text-[10px] font-bold opacity-60 mb-1 tracking-wider uppercase">${sender === 'user' ? 'You' : 'AI Assistant'}</div><div class="leading-relaxed">${text}</div>`;
+            }
+            
+            container.appendChild(item);
+            floatingChatDialog.appendChild(container);
+            floatingChatDialog.scrollTop = floatingChatDialog.scrollHeight;
+        }
+
+        floatingChatForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const message = floatingChatInput.value.trim();
+            if (!message) return;
+
+            // Disable inputs
+            floatingChatInput.disabled = true;
+            floatingChatForm.querySelector('button').disabled = true;
+
+            appendFloatingMessage('user', message);
+            chatHistory.push({ role: 'user', content: message });
+            saveChatHistory(chatHistory); // Persist to localStorage
+            
+            floatingChatInput.value = '';
+            floatingChatStatus.textContent = 'Generating response...';
+            
+            // Show loader
+            appendFloatingMessage('ai', '', true);
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
+                const res = await fetch('http://127.0.0.1:8001/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: chatHistory }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                // Remove loader
+                const loader = document.getElementById('chat-loader');
+                if (loader) loader.remove();
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const data = await res.json();
+                const reply = data?.content || 'No response from AI yet.';
+                console.log(reply);
+                appendFloatingMessage('ai', reply);
+                chatHistory.push({ role: 'assistant', content: reply });
+                saveChatHistory(chatHistory); // Persist to localStorage
+                
+                floatingChatStatus.textContent = 'Response received.';
+            } catch (err) {
+                // Remove loader on error
+                const loader = document.getElementById('chat-loader');
+                if (loader) loader.remove();
+
+                appendFloatingMessage('ai', 'AI backend is not available yet. Please start the ai_service FastAPI on port 8001.');
+                floatingChatStatus.textContent = 'AI backend unreachable.';
+            } finally {
+                // Re-enable inputs
+                floatingChatInput.disabled = false;
+                floatingChatForm.querySelector('button').disabled = false;
+                floatingChatInput.focus();
+            }
+        });
+
+        // Initialize on page load
+        window.addEventListener('load', restoreChatUI);
+    </script>
+    {% endif %}
+</body>
+</html>
