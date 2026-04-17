@@ -6,6 +6,7 @@ from results.models import CourseResult
 
 from accounts.decorators import login_required
 from accounts.models import Batch, Semester, Course, RegisteredStudent, Student
+from accounts.utils import get_user_from_jwt
 
 from django.http import HttpResponse
 from reportlab.lib import colors
@@ -225,7 +226,9 @@ def input_marks_view(request, batch_id, semester_id, course_id):
     if not batch or not semester or not course:
         return redirect('home')
 
-    user_id = request.session.get('user_id')
+    user_obj = get_user_from_jwt(request)
+    user_id = user_obj.id if user_obj else None
+    
     # Authorization check
     is_teacher = (course.course_teacher and course.course_teacher.id == user_id)
     is_chairman = (semester.committee_chairman and semester.committee_chairman.id == user_id)
@@ -519,7 +522,7 @@ def export_semester_result_sheet_pdf(semester, registered_students, courses, gro
                     total_tps += tp
             else:
                 row.extend(['-', '-', '-', '-'])
-                total_ct += course.credit_hour
+
         
         gpa = total_tps / total_ce if total_ce > 0 else 0.0
         r_letter = get_letter_from_gpa(gpa)

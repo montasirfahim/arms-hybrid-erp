@@ -27,7 +27,9 @@
                 </div>
                 <p class="text-sm text-gray-700"><strong>Email:</strong> {% if user_profile %}{{ user_profile.email }}{% else %}Not set{% endif %}</p>
                 <p class="text-sm text-gray-700 mt-1"><strong>Designation:</strong> {% if user_profile %}{{ user_profile.designation }}{% else %}Not set{% endif %}</p>
-                <p class="text-sm text-gray-700 mt-1"><strong>Batches:</strong> {{ batches|length }}</p>
+                <button id="resetPasswordBtn" class="mt-4 w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-key"></i> Reset Password
+                </button>
             </div>
 
             <div class="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -58,4 +60,168 @@
         </div>
         
     </div>
+
+    <!-- Password Reset Modal -->
+    <div id="resetModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden transform transition-all">
+            <div class="bg-blue-600 p-4 flex justify-between items-center">
+                <h3 class="text-white font-bold text-lg">Reset Password</h3>
+                <button id="closeModal" class="text-white hover:text-gray-200">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-6">
+                <!-- Step 1: Send OTP -->
+                <div id="step1">
+                    <p class="text-gray-600 mb-6">Click the button below to receive a 6-digit OTP on your registered email ({{ user_profile.email }}).</p>
+                    <button id="sendOtpBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition shadow-md flex items-center justify-center gap-2">
+                        <span id="sendOtpSpinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                        Send OTP
+                    </button>
+                </div>
+
+                <!-- Step 2: Verify & Reset -->
+                <div id="step2" class="hidden">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Enter OTP</label>
+                        <input type="text" id="otpInput" maxlength="6" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest font-bold" placeholder="000000">
+                        <p class="text-xs text-gray-500 mt-1">OTP expires in 3 minutes.</p>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">New Password</label>
+                        <input type="password" id="newPasswordInput" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••">
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Confirm Password</label>
+                        <input type="password" id="confirmPasswordInput" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••">
+                    </div>
+                    <button id="verifyResetBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition shadow-md flex items-center justify-center gap-2">
+                        <span id="resetSpinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                        Update Password
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const resetModal = document.getElementById('resetModal');
+            const resetBtn = document.getElementById('resetPasswordBtn');
+            const closeModal = document.getElementById('closeModal');
+            const sendOtpBtn = document.getElementById('sendOtpBtn');
+            const verifyResetBtn = document.getElementById('verifyResetBtn');
+            
+            const step1 = document.getElementById('step1');
+            const step2 = document.getElementById('step2');
+            
+            const otpInput = document.getElementById('otpInput');
+            const newPasswordInput = document.getElementById('newPasswordInput');
+            const confirmPasswordInput = document.getElementById('confirmPasswordInput');
+            
+            const sendOtpSpinner = document.getElementById('sendOtpSpinner');
+            const resetSpinner = document.getElementById('resetSpinner');
+
+            resetBtn.addEventListener('click', () => {
+                resetModal.classList.remove('hidden');
+                resetModal.classList.add('flex');
+                step1.classList.remove('hidden');
+                step2.classList.add('hidden');
+                otpInput.value = '';
+                newPasswordInput.value = '';
+                confirmPasswordInput.value = '';
+            });
+
+            closeModal.addEventListener('click', () => {
+                resetModal.classList.add('hidden');
+                resetModal.classList.remove('flex');
+            });
+
+            // Close modal when clicking outside
+            resetModal.addEventListener('click', (e) => {
+                if (e.target === resetModal) {
+                    resetModal.classList.add('hidden');
+                    resetModal.classList.remove('flex');
+                }
+            });
+
+            sendOtpBtn.addEventListener('click', async () => {
+                sendOtpBtn.disabled = true;
+                sendOtpSpinner.classList.remove('hidden');
+                
+                try {
+                    const response = await fetch('{% url "initiate_password_reset" %}', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        }
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(data.message);
+                        step1.classList.add('hidden');
+                        step2.classList.remove('hidden');
+                    } else {
+                        alert(data.message || 'Failed to send OTP.');
+                    }
+                } catch (error) {
+                    alert('An error occurred. Please try again.');
+                } finally {
+                    sendOtpBtn.disabled = false;
+                    sendOtpSpinner.classList.add('hidden');
+                }
+            });
+
+            verifyResetBtn.addEventListener('click', async () => {
+                const otp = otpInput.value.trim();
+                const newPassword = newPasswordInput.value;
+                const confirmPassword = confirmPasswordInput.value;
+                
+                if (!otp || otp.length !== 6) {
+                    alert('Please enter a valid 6-digit OTP.');
+                    return;
+                }
+                if (!newPassword || newPassword.length < 6) {
+                    alert('Password must be at least 6 characters long.');
+                    return;
+                }
+                if (newPassword !== confirmPassword) {
+                    alert('Passwords do not match.');
+                    return;
+                }
+                
+                verifyResetBtn.disabled = true;
+                resetSpinner.classList.remove('hidden');
+                
+                try {
+                    const response = await fetch('{% url "verify_and_reset_password" %}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            otp: otp,
+                            new_password: newPassword
+                        })
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(data.message);
+                        window.location.reload();
+                    } else {
+                        alert(data.message || 'Failed to reset password.');
+                    }
+                } catch (error) {
+                    alert('An error occurred. Please try again.');
+                } finally {
+                    verifyResetBtn.disabled = false;
+                    resetSpinner.classList.add('hidden');
+                }
+            });
+        });
+    </script>
 {% endblock %}

@@ -1,19 +1,24 @@
 import csv
 import io
 import json
-from hashlib import sha256
+import secrets
+import httpx
+from datetime import timedelta
 
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from django.conf import settings
+from django.contrib.auth.hashers import make_password, check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .decorators import login_required
 # Create your views here.
 from .models import Batch, Student, Semester, User, Course
-
+from .utils import *
 
 @login_required
 def home_view(request):
@@ -26,22 +31,19 @@ def home_view(request):
 
 @login_required
 def dashboard_view(request):
+    user_obj = get_user_from_jwt(request)
     user = None
-    user_id = request.session.get('user_id')
-    user_obj = None
-    if user_id:
-        user_obj = User.objects.filter(pk=user_id).only('id','name','email','role','designation').first()
-        if user_obj:
-            user = {
-                'id': user_obj.id,
-                'name': user_obj.name,
-                'email': user_obj.email,
-                'role': user_obj.role,
-                'designation': user_obj.designation,
-            }
+    if user_obj:
+        user = {
+            'id': user_obj.id,
+            'name': user_obj.name,
+            'email': user_obj.email,
+            'role': user_obj.role,
+            'designation': user_obj.designation,
+        }
 
-    courses_count = Course.objects.filter(course_teacher=user_obj).count()
-    marks_completed = Course.objects.filter(course_teacher=user_obj, marks_input_status=True).count()
+    courses_count = Course.objects.filter(course_teacher=user_obj).count() if user_obj else 0
+    marks_completed = Course.objects.filter(course_teacher=user_obj, marks_input_status=True).count() if user_obj else 0
     marks_pending = courses_count - marks_completed
     batches = Batch.objects.all().order_by('-session')
 
@@ -355,13 +357,14 @@ def manage_semester_view(request, batch_id, semester_id):
     from .models import RegisteredStudent
     registered_students = semester.registered_students.all().select_related('student').order_by('student__student_id')
     
+    user_obj = get_user_from_jwt(request)
     context = {
         'batch': batch,
         'semester': semester,
         'theory_courses': theory_courses,
         'teachers': teachers,
         'registered_students': registered_students,
-        'current_user_id': request.session.get('user_id'),
+        'current_user_id': user_obj.id if user_obj else None,
     }
     
     return render(request, 'accounts/manage_semester.html', context)
@@ -397,8 +400,6 @@ def login_view(request):
 def api_login(request):
     """
     API endpoint for JWT token generation
-    Expects JSON: {'email': 'user@example.com', 'password': 'password123'}
-    Returns: {'access': 'token', 'refresh': 'token', 'user': {...}}
     """
     try:
         data = json.loads(request.body)
@@ -420,30 +421,27 @@ def api_login(request):
                 'message': 'Invalid email or password.'
             }, status=401)
         
-        # Verify password (simple SHA256 comparison)
-        # In production, use Django's password hashing
-        password_hash = sha256(password.encode()).hexdigest()
-        
-        if user.password != password and user.password != password_hash:
-            # Try as plain text comparison for backward compatibility
-            if user.password != password:
+        # Verify password using Django's check_password
+        if not check_password(password, user.password):
+            # Fallback for old SHA256 passwords
+            from hashlib import sha256
+            password_hash = sha256(password.encode()).hexdigest()
+            if user.password != password_hash and user.password != password:
                 return JsonResponse({
                     'success': False,
                     'message': 'Invalid email or password.'
                 }, status=401)
+            else:
+                # Upgrade password to secure hash on successful login
+                user.password = make_password(password)
+                user.save()
         
         # Generate JWT tokens
         refresh = RefreshToken()
-        # Add custom user claims to token
         refresh['user_id'] = user.id
-        refresh['user_email'] = user.email
-        refresh['user_role'] = user.role
         
         access = refresh.access_token
-        # Add same claims to access token
         access['user_id'] = user.id
-        access['user_email'] = user.email
-        access['user_role'] = user.role
         
         user_data = {
             'id': user.id,
@@ -453,18 +451,34 @@ def api_login(request):
             'designation': user.designation,
         }
         
-        # Set session to mark user as authenticated
-        request.session['is_authenticated'] = True
-        request.session['user_id'] = user.id
-        request.session['user_email'] = user.email
-        
-        return JsonResponse({
+        response = JsonResponse({
             'success': True,
             'message': 'Login successful!',
             'access': str(access),
             'refresh': str(refresh),
             'user': user_data,
         }, status=200)
+
+        # Set tokens in cookies for hybrid support (template views)
+        # access_token expires in 72 hours per settings, refresh in 30 days
+        response.set_cookie(
+            key='access_token',
+            value=str(access),
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite='Lax',
+            max_age=3 * 24 * 60 * 60 # 3 days
+        )
+        response.set_cookie(
+            key='refresh_token',
+            value=str(refresh),
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite='Lax',
+            max_age=30 * 24 * 60 * 60 # 30 days
+        )
+        
+        return response
         
     except json.JSONDecodeError:
         return JsonResponse({
@@ -482,35 +496,132 @@ def api_login(request):
 @require_http_methods(["POST"])
 def api_logout(request):
     """
-    API endpoint for logout (invalidate tokens)
+    API endpoint for logout
     """
     try:
-        data = json.loads(request.body)
-        refresh_token = data.get('refresh', '')
-        
-        if not refresh_token:
-            return JsonResponse({
-                'success': False,
-                'message': 'Refresh token is required.'
-            }, status=400)
-        
-        # Clear session
-        request.session.flush()
-        
-        # Token blacklisting can be implemented here if needed
-        return JsonResponse({
+        response = JsonResponse({
             'success': True,
             'message': 'Logout successful!'
         }, status=200)
         
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'success': False,
-            'message': 'Invalid JSON data.'
-        }, status=400)
+        # Clear cookies
+        response.delete_cookie('access_token')
+        response.delete_cookie('refresh_token')
+        
+        return response
+        
     except Exception as e:
         return JsonResponse({
             'success': False,
             'message': f'An error occurred: {str(e)}'
         }, status=500)
+
+
+def send_brevo_email(to_email, subject, content):
+    """Helper to send email via Brevo API"""
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": settings.BREVO_API_KEY,
+        "content-type": "application/json"
+    }
+    payload = {
+        "sender": {"name": settings.BREVO_SENDER_NAME, "email": settings.BREVO_SENDER_EMAIL},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": content
+    }
+    try:
+        with httpx.Client() as client:
+            response = client.post(url, headers=headers, json=payload)
+            return response.status_code < 300
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return False
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def initiate_password_reset(request):
+    try:
+        email = None
+        if request.body:
+            try:
+                data = json.loads(request.body)
+                email = data.get('email', '').strip()
+            except json.JSONDecodeError:
+                pass
+        
+        user_obj = get_user_from_jwt(request)
+        user = None
+        if user_obj:
+            user = user_obj
+        elif email:
+            user = User.objects.filter(email=email).first()
+        
+        # Security: Generic response for forgot password to prevent email enumeration
+        if not user:
+            if email and not user_obj:
+                return JsonResponse({'success': True, 'message': 'If an account exists with this email, an OTP has been sent.'})
+            return JsonResponse({'success': False, 'message': 'User not found.'}, status=404)
+
+        # Secure 6-digit OTP
+        otp = "".join([str(secrets.SystemRandom().randint(0, 9)) for _ in range(6)])
+        user.otp_code = otp
+        user.otp_expiry = timezone.now() + timedelta(minutes=3)
+        user.save()
+
+        subject = "Your Password Reset OTP"
+        content = get_password_reset_email_body(user.name, otp)
+        
+        if send_brevo_email(user.email, subject, content):
+            msg = 'OTP sent to your email.' if user_obj else 'If an account exists with this email, an OTP has been sent.'
+            return JsonResponse({'success': True, 'message': msg})
+        else:
+            return JsonResponse({'success': False, 'message': 'Failed to send OTP email.'}, status=500)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def verify_and_reset_password(request):
+    try:
+        data = json.loads(request.body)
+        otp = data.get('otp', '').strip()
+        new_password = data.get('new_password', '').strip()
+        email = data.get('email', '').strip()
+        
+        if not otp or not new_password:
+            return JsonResponse({'success': False, 'message': 'OTP and new password are required.'}, status=400)
+            
+        user_obj = get_user_from_jwt(request)
+        user = None
+        if user_obj:
+            user = user_obj
+        elif email:
+            user = User.objects.filter(email=email).first()
+        
+        if not user:
+            return JsonResponse({'success': False, 'message': 'User not found.'}, status=404)
+            
+        # Check OTP and expiry
+        if user.otp_code != otp:
+            return JsonResponse({'success': False, 'message': 'Invalid OTP.'}, status=400)
+            
+        if user.otp_expiry < timezone.now():
+            return JsonResponse({'success': False, 'message': 'OTP has expired.'}, status=400)
+            
+        # Update password securely
+        user.password = make_password(new_password)
+        user.otp_code = None
+        user.otp_expiry = None
+        user.save()
+        
+        return JsonResponse({'success': True, 'message': 'Password reset successful!'})
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON data.'}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'An error occurred: {str(e)}'}, status=500)
 
