@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
-# Start FastAPI in the background on port 8001
-# We use 127.0.0.1 so it's only accessible internally
-python -m uvicorn ai_service.main:app --host 127.0.0.1 --port 8001 &
+echo "Starting ARMS AI Service..."
+# Start FastAPI in the background
+python3 -m uvicorn ai_service.main:app --host 127.0.0.1 --port 8001 &
 
-# Start Django Gunicorn on the port Render provides
+# Wait a few seconds for FastAPI to bind the port
+sleep 5
+
+echo "Starting Django Server..."
+# Start Django Gunicorn
 gunicorn proj_arms.wsgi:application --bind 0.0.0.0:$PORT

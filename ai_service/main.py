@@ -42,7 +42,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+def get_groq_client():
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY environment variable is not set.")
+    return Groq(api_key=api_key)
 
 class ChatMessage(BaseModel):
     role: str
@@ -129,6 +133,7 @@ async def root():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     try:
+        client = get_groq_client()
         # Use a very specific system message to enforce the rules
         messages = [
             {"role": "system", "content": f"You are the ARMS ERP Assistant. {SCHEMA_CONTEXT}"}
