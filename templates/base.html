@@ -108,7 +108,7 @@
         const BASE_URLS = {
             logout: '{% url "api_logout" %}',
             login: '{% url "login" %}',
-            chatApi: 'http://127.0.0.1:8001/chat'
+            chatApi: '{% url "ai_chat_proxy" %}'
         };
     </script>
     <script src="{% static 'js/base.js' %}"></script>

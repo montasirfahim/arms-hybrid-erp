@@ -26,6 +26,7 @@ urlpatterns = [
     path('login/', accounts_views.login_view, name='login'),
     path('api/login/', accounts_views.api_login, name='api_login'),
     path('api/logout/', accounts_views.api_logout, name='api_logout'),
+    path('api/ai/chat/', accounts_views.ai_proxy_view, name='ai_chat_proxy'),
     path('api/password-reset/initiate/', accounts_views.initiate_password_reset, name='initiate_password_reset'),
     path('api/password-reset/verify/', accounts_views.verify_and_reset_password, name='verify_and_reset_password'),
     path('batch/create/', accounts_views.create_batch_view, name='create_batch'),
