@@ -406,6 +406,8 @@ async def ai_proxy_view(request):
             )
             return JsonResponse(response.json(), status=response.status_code)
     except Exception as e:
+        import traceback
+        print(f"--- AI PROXY ERROR ---\n{traceback.format_exc()}\n")
         return JsonResponse({"error": f"AI service unreachable: {str(e)}"}, status=503)
 
 
