@@ -391,7 +391,7 @@ def delete_registered_student_view(request, batch_id, semester_id, registration_
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def ai_proxy_view(request):
+async def ai_proxy_view(request):
     """
     Proxies requests from the frontend to the local FastAPI service.
     This allows the AI service to work on Render's single-port setup.
