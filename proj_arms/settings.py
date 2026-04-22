@@ -88,6 +88,14 @@ DATABASES = {
     )
 }
 
+# Fix for Render/Aiven MySQL ssl-mode hyphen issue
+db_config = DATABASES.get('default')
+if db_config:
+    if 'ssl-mode' in db_config:
+        db_config['ssl_mode'] = db_config.pop('ssl-mode')
+    if 'OPTIONS' in db_config and 'ssl-mode' in db_config['OPTIONS']:
+        db_config['OPTIONS']['ssl_mode'] = db_config['OPTIONS'].pop('ssl-mode')
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
