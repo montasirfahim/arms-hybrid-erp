@@ -317,6 +317,9 @@ def input_marks_view(request, batch_id, semester_id, course_id):
 
                     if diff >= 12.0:  # third examiner marks input-able iff diff >= 12.00
                         res.third_examiner_needed = True
+                    else:
+                        res.third_examiner_needed = False
+                        res.theory_third_examiner = None
 
                 except ValueError:
                     pass
@@ -336,6 +339,10 @@ def input_marks_view(request, batch_id, semester_id, course_id):
                         res.third_examiner_needed = True
                         if third is not None and third != "":
                             res.theory_third_examiner = float(third)
+                    elif diff < 12.00:
+                        res.third_examiner_needed = False
+                        res.theory_third_examiner = None
+
                 except ValueError:
                     pass
             

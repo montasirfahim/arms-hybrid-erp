@@ -17,7 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .decorators import login_required
 # Create your views here.
-from .models import Batch, Student, Semester, User, Course
+from .models import Batch, Student, Semester, User, Course, RegisteredStudent
 from .utils import *
 
 @login_required
@@ -183,6 +183,15 @@ def batch_details_view(request, batch_id):
             elif batch.semesters.filter(name=semester_name).exists():
                 messages.error(request, 'Semester already exists for this batch.')
             else:
+                students_to_register = batch.students.all()
+
+                if semester_name == '3rd Semester':
+                    students_to_register = students_to_register.filter(group='M.Engg')
+
+                if not students_to_register:
+                    messages.error(request, 'Please add all admitted students before creating any semester')
+                    return redirect('batch_details', batch_id=batch.id)
+
                 chairman = None
                 if chairman_id:
                     chairman = User.objects.filter(pk=chairman_id).first()
@@ -192,14 +201,7 @@ def batch_details_view(request, batch_id):
                     committee_chairman=chairman,
                     result_status=result_status,
                 )
-                
-                # add existing students of this batch to RegisteredStudent for each semester
-                from .models import RegisteredStudent
-                students_to_register = batch.students.all()
-                
-                if semester_name == '3rd Semester':
-                    students_to_register = students_to_register.filter(group='M.Engg')
-                
+
                 registered_count = 0
                 for student in students_to_register:
                     RegisteredStudent.objects.get_or_create(
@@ -396,10 +398,13 @@ async def ai_proxy_view(request):
     Proxies requests from the frontend to the local FastAPI service.
     This allows the AI service to work on Render's single-port setup.
     """
+    # On Local, we might still want to use the proxy if the frontend points here
+    target_url = "http://127.0.0.1:8001/chat"
+    
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://127.0.0.1:8001/chat",
+                target_url,
                 content=request.body,
                 headers={"Content-Type": "application/json"},
                 timeout=60.0
@@ -407,8 +412,11 @@ async def ai_proxy_view(request):
             return JsonResponse(response.json(), status=response.status_code)
     except Exception as e:
         import traceback
-        print(f"--- AI PROXY ERROR ---\n{traceback.format_exc()}\n")
-        return JsonResponse({"error": f"AI service unreachable: {str(e)}"}, status=503)
+        print(f"--- AI PROXY ERROR (Target: {target_url}) ---\n{traceback.format_exc()}\n")
+        return JsonResponse({
+            "error": "AI backend is not available yet.",
+            "details": str(e)
+        }, status=503)
 
 
 # Login Views

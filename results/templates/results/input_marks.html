@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto p-6">
@@ -79,18 +80,10 @@
                         </button>
                         <input type="hidden" name="action" id="form-action" value="update_marks">
                         <button type="submit" onclick="document.getElementById('form-action').value='update_marks'" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                            Update Marks
+                            Save Changes
                         </button>
                     </div>
-                    <script>
-                        function confirmFinalize() {
-                            if (confirm("You can't update any marks and it will save permanently, Are you sure to finalize marks for this course?")) {
-                                document.getElementById('form-action').value = 'finalize_result';
-                                return true;
-                            }
-                            return false;
-                        }
-                    </script>
+                    <script src="{% static 'results/js/marks_input.js' %}"></script>
                 {% else %}
                     <div class="w-full flex flex-col items-center space-y-4">
                         <span class="inline-flex items-center px-6 py-2 border border-transparent text-base font-semibold rounded-full text-green-700 bg-green-100 shadow-sm">
