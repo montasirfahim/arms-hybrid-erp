@@ -20,6 +20,12 @@ from .decorators import login_required
 from .models import Batch, Student, Semester, User, Course, RegisteredStudent
 from .utils import *
 
+def health_check(request):
+    """
+    Health check endpoint for monitoring and keep-alive cronjobs.
+    """
+    return JsonResponse({"status": "healthy"}, status=200)
+
 @login_required
 def home_view(request):
     batches = Batch.objects.all().order_by('-session')

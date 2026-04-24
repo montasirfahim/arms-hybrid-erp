@@ -20,6 +20,7 @@ from accounts import views as accounts_views
 from results import views as results_views
 
 urlpatterns = [
+    path('health/', accounts_views.health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('', accounts_views.home_view, name='home'),
     path('dashboard/', accounts_views.dashboard_view, name='dashboard'),
