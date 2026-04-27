@@ -14,10 +14,7 @@ services:
       - key: DEBUG
         value: "False"
       - key: AI_SERVICE_URL
-        fromService:
-          type: web
-          name: arms-ai-service
-          property: host
+        value: "http://arms-ai-service:10000"
       - key: GROQ_API_KEY
         sync: false
 
