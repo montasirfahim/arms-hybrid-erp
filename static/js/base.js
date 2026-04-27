@@ -177,9 +177,12 @@ function initAIChat(chatApiUrl) {
             const loader = document.getElementById('chat-loader');
             if (loader) loader.remove();
 
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
             const data = await res.json();
+            if (!res.ok) {
+                const errorMsg = data?.content || data?.error || `Error ${res.status}: ${res.statusText}`;
+                throw new Error(errorMsg);
+            }
+
             const reply = data?.content || 'No response from AI yet.';
             appendFloatingMessage('ai', reply);
             chatHistory.push({ role: 'assistant', content: reply });
@@ -190,9 +193,10 @@ function initAIChat(chatApiUrl) {
             console.error('AI Chat Error:', err);
             const loader = document.getElementById('chat-loader');
             if (loader) loader.remove();
-            appendFloatingMessage('ai', 'The ARMS AI Assistant is currently unavailable. Please ensure the GROQ_API_KEY is correctly configured in the server environment.');
+            appendFloatingMessage('ai', `Error: ${err.message}`);
             floatingChatStatus.textContent = 'AI Service Error.';
-        } finally {
+        }
+ finally {
             floatingChatInput.disabled = false;
             floatingChatForm.querySelector('button').disabled = false;
             floatingChatInput.focus();

@@ -22,9 +22,12 @@ def ai_chat_view(request):
         data = json.loads(request.body)
         
         # 2. Define the AI Service URL (Local vs Render)
-        # On Render, AI_SERVICE_URL will be the internal host (e.g., http://arms-ai-service:10000)
-        # On Local, it will be http://localhost:8000
         ai_service_url = os.getenv("AI_SERVICE_URL", "http://localhost:8001")
+        
+        # Ensure the URL has a protocol
+        if not ai_service_url.startswith("http"):
+            # On Render, if we only get the host, we add http and the internal port 10000
+            ai_service_url = f"http://{ai_service_url}:10000"
         
         logger.info(f"Proxying request to AI Service: {ai_service_url}/chat")
 
