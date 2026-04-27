@@ -397,34 +397,6 @@ def delete_registered_student_view(request, batch_id, semester_id, registration_
     return redirect('manage_semester', batch_id=batch_id, semester_id=semester_id)
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-async def ai_proxy_view(request):
-    """
-    Proxies requests from the frontend to the local FastAPI service.
-    This allows the AI service to work on Render's single-port setup.
-    """
-    # On Local, we might still want to use the proxy if the frontend points here
-    target_url = "http://127.0.0.1:8001/chat"
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                target_url,
-                content=request.body,
-                headers={"Content-Type": "application/json"},
-                timeout=60.0
-            )
-            return JsonResponse(response.json(), status=response.status_code)
-    except Exception as e:
-        import traceback
-        print(f"--- AI PROXY ERROR (Target: {target_url}) ---\n{traceback.format_exc()}\n")
-        return JsonResponse({
-            "error": "AI backend is not available yet.",
-            "details": str(e)
-        }, status=503)
-
-
 # Login Views
 def login_view(request):
     """Render login page"""

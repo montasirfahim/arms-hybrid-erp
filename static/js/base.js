@@ -162,9 +162,13 @@ function initAIChat(chatApiUrl) {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 60000);
 
+            const token = localStorage.getItem('access_token');
             const res = await fetch(chatApiUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ messages: chatHistory }),
                 signal: controller.signal
             });
@@ -183,10 +187,11 @@ function initAIChat(chatApiUrl) {
             
             floatingChatStatus.textContent = 'Response received.';
         } catch (err) {
+            console.error('AI Chat Error:', err);
             const loader = document.getElementById('chat-loader');
             if (loader) loader.remove();
-            appendFloatingMessage('ai', 'AI backend is not available yet. Please start the ai_service FastAPI on port 8001.');
-            floatingChatStatus.textContent = 'AI backend unreachable.';
+            appendFloatingMessage('ai', 'The ARMS AI Assistant is currently unavailable. Please ensure the GROQ_API_KEY is correctly configured in the server environment.');
+            floatingChatStatus.textContent = 'AI Service Error.';
         } finally {
             floatingChatInput.disabled = false;
             floatingChatForm.querySelector('button').disabled = false;

@@ -1,39 +1,27 @@
-from dotenv import load_dotenv
 import os
-import sys
-
-# Get the absolute path to the project root
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# 1. Load root .env for DB and Django settings
-root_env = os.path.join(BASE_DIR, ".env")
-if os.path.exists(root_env):
-    load_dotenv(root_env)
-
-# 2. Load local .env for AI specific settings (Groq Key)
-local_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-if os.path.exists(local_env):
-    load_dotenv(local_env, override=True)
-
-import django
 import json
-from typing import List, Optional, Any, Dict
+import logging
+from typing import List, Dict, Optional
+import urllib.parse
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import MySQLdb
+import MySQLdb.cursors
 from groq import Groq
+from dotenv import load_dotenv
 
-# Setup Django Environment
-sys.path.append(BASE_DIR)
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'proj_arms.settings')
-os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
-django.setup()
+# Load environment variables for local development
+load_dotenv()
 
-from django.db import connection
+# Initialize Logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("ai_service")
 
-# Initialize FastAPI app
-app = FastAPI(title="ARMS AI SQL Service", version="2.0.0")
+app = FastAPI(title="ARMS AI Service", version="1.0.0")
 
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,65 +30,115 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Groq Configuration ---
 def get_groq_client():
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY environment variable is not set.")
     return Groq(api_key=api_key)
 
+# --- Database Helper ---
+def get_db_connection():
+    """
+    Connects to MySQL using either DATABASE_URL (Render/Production) 
+    or individual DB environment variables (Local).
+    """
+    db_url = os.getenv('DATABASE_URL')
+    
+    try:
+        if db_url:
+            # Parse DATABASE_URL: mysql://user:password@host:port/dbname
+            url = urllib.parse.urlparse(db_url)
+            conn = MySQLdb.connect(
+                host=url.hostname,
+                user=url.username,
+                passwd=url.password,
+                db=url.path[1:], # Remove leading slash
+                port=url.port or 3306,
+                cursorclass=MySQLdb.cursors.DictCursor,
+                ssl={"ssl_mode": "REQUIRED"} if url.hostname and ("render.com" in url.hostname or "aivencloud.com" in url.hostname) else None
+            )
+        else:
+            # Fallback to individual variables
+            conn = MySQLdb.connect(
+                host=os.getenv('DB_HOST', '127.0.0.1'),
+                user=os.getenv('DB_USER'),
+                passwd=os.getenv('DB_PASSWORD'),
+                db=os.getenv('DB_NAME'),
+                port=int(os.getenv('DB_PORT', '3306')),
+                cursorclass=MySQLdb.cursors.DictCursor
+            )
+        return conn
+    except Exception as e:
+        logger.error(f"Database Connection Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+
+def execute_read_only_query(sql_query: str):
+    query_stripped = sql_query.strip().upper()
+    forbidden_keywords = ["INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE", "GRANT", "REVOKE"]
+    
+    if not query_stripped.startswith("SELECT"):
+        return {"error": "Only SELECT queries are allowed."}
+    
+    for word in forbidden_keywords:
+        if f" {word} " in f" {query_stripped} ":
+            return {"error": f"Keyword '{word}' is forbidden."}
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql_query)
+        results = cursor.fetchall()
+        return results if results else "No records found."
+    except Exception as e:
+        logger.error(f"SQL Execution Error: {str(e)}")
+        return {"error": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+# --- Pydantic Models ---
 class ChatMessage(BaseModel):
     role: str
     content: str
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
-    model: Optional[str] = "llama-3.3-70b-versatile"
-    temperature: Optional[float] = 0.1 # Lower temperature for better SQL accuracy
-    max_tokens: Optional[int] = 1024
+    model: str = "llama-3.3-70b-versatile"
+    temperature: float = 0.1
+    max_tokens: int = 1024
 
-# --- SQL Execution Tool ---
+# --- AI Context ---
+SCHEMA_CONTEXT = """
+### Database Schema for ARMS ERP:
+1. accounts_user: id (int, PK), name, email, role ('CHAIRMAN', 'FACULTY', 'OFFICER', 'STUDENT'), designation, is_verified (boolean)
+2. accounts_batch: id (int, PK), session (varchar 7, e.g. '2025-26'), name (e.g. 'Masters in ICT')
+3. accounts_student: student_id (varchar 7, PK, e.g. 'IT22001'), name, email, batch_id (FK to accounts_batch), group ('M.Sc', 'M.Engg', 'Both')
+4. accounts_semester: id (int, PK), name ('1st Semester', '2nd Semester', '3rd Semester'), batch_id (FK to accounts_batch), committee_chairman_id (FK to accounts_user), result_status (boolean)
+5. accounts_course: id (int, PK), course_code (e.g. 'ICT5101'), title, credit_hour, type ('Theory'), target_student ('M.Sc', 'M.Engg', 'Both'), batch_id (FK to accounts_batch), semester_id (FK to accounts_semester), course_teacher_id (FK to accounts_user), marks_input_status (boolean)
+6. accounts_registeredstudent: id (int, PK), batch_id (FK to accounts_batch), semester_id (FK to accounts_semester), student_id (FK to accounts_student), status (boolean)
+7. results_courseresult: id (int, PK), student_id (FK to accounts_student), course_id (FK to accounts_course), semester_id (FK to accounts_semester), ct_marks, attendance_marks, theory_internal, theory_external, theory_third_examiner, third_examiner_needed (boolean), final_theory_marks, gpa (float, 0.0-4.0), letter (e.g. 'A+')
 
-def execute_read_only_query(sql_query: str):
-    """
-    Executes a raw SQL SELECT query against the database.
-    Only SELECT statements are allowed for security.
-    """
-    # Security: Basic check to ensure it's a SELECT query
-    query_stripped = sql_query.strip().upper()
-    
-    # Block non-SELECT queries and dangerous keywords
-    forbidden_keywords = ["INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE", "GRANT", "REVOKE"]
-    
-    if not query_stripped.startswith("SELECT"):
-        return {"error": "Only SELECT queries are allowed for security reasons."}
-    
-    for word in forbidden_keywords:
-        if f" {word} " in f" {query_stripped} ":
-            return {"error": f"Keyword '{word}' is forbidden."}
+### CRITICAL OPERATIONAL RULES:
+1. **NO TECHNICAL TALK:** Never mention SQL, queries, tables, or database IDs to the user. 
+2. **SILENT EXECUTION:** If you need data, use the `execute_read_only_query` tool. Do not describe the query you are about to run.
+3. **NATURAL LANGUAGE ONLY:** Your response must be 100% natural language. 
+4. **VAGUE REQUESTS:** If the user doesn't provide enough info, ask: "Which session or batch should I look into?"
+5. **NO HALLUCINATIONS:** If the tool returns no data, say you couldn't find anything in the records.
+"""
 
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(sql_query)
-            columns = [col[0] for col in cursor.description]
-            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            return results if results else "No records found."
-    except Exception as e:
-        return {"error": str(e)}
-
-# Tools definition for Groq
 TOOLS = [
+
     {
         "type": "function",
         "function": {
             "name": "execute_read_only_query",
-            "description": "Execute a MySQL SELECT query to fetch data from the ERP database.",
+            "description": "Execute a MySQL SELECT query to fetch ERP data.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "sql_query": {
-                        "type": "string", 
-                        "description": "A valid MySQL SELECT query. Example: 'SELECT * FROM accounts_student WHERE batch_id = 1'"
-                    }
+                    "sql_query": {"type": "string", "description": "MySQL SELECT query."}
                 },
                 "required": ["sql_query"]
             }
@@ -108,41 +146,18 @@ TOOLS = [
     }
 ]
 
-SCHEMA_CONTEXT = """
-### Database Schema for ARMS ERP:
-1. accounts_batch: id (int, PK), session (varchar 7, e.g. '2025-26'), name (varchar 255)
-2. accounts_student: student_id (varchar 7, PK, e.g. 'IT22001'), name, email, batch_id (FK to accounts_batch), group ('M.Sc', 'M.Engg', 'Both')
-3. accounts_semester: id, name ('1st Semester', '2nd Semester', '3rd Semester'), batch_id (FK to accounts_batch), result_status (boolean)
-4. accounts_course: id, course_code (e.g. 'ICT5101'), title, credit_hour, type ('Theory', 'Thesis', 'Project'), target_student ('M.Sc', 'M.Engg', 'Both'), batch_id (FK to accounts_batch), semester_id (FK to accounts_semester)
-5. results_courseresult: id, student_id (FK to accounts_student), course_id (FK to accounts_course), semester_id (FK to accounts_semester), ct_marks, attendance_marks, theory_internal, theory_external, theory_third_examiner, gpa (float, 0.0-4.0)
-
-### CRITICAL OPERATIONAL RULES:
-1. **NO TECHNICAL TALK:** Never mention SQL, queries, tables, or database IDs to the user. 
-2. **SILENT EXECUTION:** If you need data, use the `execute_read_only_query` tool. Do not describe the query you are about to run.
-3. **NATURAL LANGUAGE ONLY:** Your response must be 100% natural language. 
-   - Good: "There is 1 semester registered for the 2025-26 session."
-   - Bad: "Running SELECT count... found 1."
-4. **VAGUE REQUESTS:** If the user doesn't provide enough info (e.g., "show students"), do not guess. Ask: "Which session or batch should I look into?"
-5. **NO HALLUCINATIONS:** If the tool returns no data, say you couldn't find anything in the records.
-"""
-
-@app.get("/")
-async def root():
-    return {"status": "Online", "service": "ARMS AI SQL Analytics Engine"}
+# @app.get("/")
+# def health_check():
+#     return {"status": "healthy", "service": "ARMS-AI"}
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def ai_chat(request: ChatRequest):
     try:
         client = get_groq_client()
-        # Use a very specific system message to enforce the rules
-        messages = [
-            {"role": "system", "content": f"You are the ARMS ERP Assistant. {SCHEMA_CONTEXT}"}
-        ]
-        
+        messages = [{"role": "system", "content": f"You are the ARMS ERP Assistant. {SCHEMA_CONTEXT}"}]
         for msg in request.messages:
             messages.append({"role": msg.role, "content": msg.content})
 
-        # 1. First call to decide on SQL
         response = client.chat.completions.create(
             model=request.model,
             messages=messages,
@@ -153,51 +168,23 @@ async def chat(request: ChatRequest):
         )
 
         response_message = response.choices[0].message
-        print(f"\n--- RAW AI RESPONSE (1st Call) ---\n{response_message.content}\n")
-        
-        tool_calls = response_message.tool_calls
-        if tool_calls:
-            print(f"--- TOOL CALLS ---\n{tool_calls}\n")
-
-        # 2. If SQL generation was requested
-        if tool_calls:
+        if response_message.tool_calls:
             messages.append(response_message)
-            
-            for tool_call in tool_calls:
-                function_name = tool_call.function.name
-                function_args = json.loads(tool_call.function.arguments) 
-                
-                if function_name == "execute_read_only_query":
-                    sql = function_args.get("sql_query")
-                    print(f"--- EXECUTING SQL ---\n{sql}\n")
-                    result = execute_read_only_query(sql)
-                else:
-                    result = {"error": "Function not found"}
+            for tool_call in response_message.tool_calls:
+                if tool_call.function.name == "execute_read_only_query":
+                    args = json.loads(tool_call.function.arguments)
+                    result = execute_read_only_query(args.get("sql_query"))
+                    messages.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": "execute_read_only_query",
+                        "content": json.dumps(result, default=str),
+                    })
 
-                messages.append({
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "name": function_name,
-                    "content": json.dumps(result, default=str),
-                })
+            second_response = client.chat.completions.create(model=request.model, messages=messages)
+            return {"role": "assistant", "content": second_response.choices[0].message.content}
 
-            # 3. Final summary call
-            second_response = client.chat.completions.create(
-                model=request.model,
-                messages=messages
-            )
-            print(f"--- FINAL AI SUMMARY ---\n{second_response.choices[0].message.content}\n")
-            return {
-                "role": "assistant",
-                "content": second_response.choices[0].message.content
-            }
-
-        return {
-            "role": "assistant",
-            "content": response_message.content
-        }
-
+        return {"role": "assistant", "content": response_message.content}
     except Exception as e:
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Chat Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
