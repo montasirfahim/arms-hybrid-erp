@@ -52,20 +52,9 @@ jobs:
     
     steps:
     - name: Deploy Django App
-      if: env.DJANGO_HOOK != ''
-      env:
-        DJANGO_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL_DJANGO }}
       run: |
-        curl -X POST "$DJANGO_HOOK"
+        curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL_DJANGO }}
         
     - name: Deploy AI Service
-      if: env.AI_HOOK != ''
-      env:
-        AI_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL_AI }}
       run: |
-        curl -X POST "$AI_HOOK"
-
-    - name: Check for Missing Secrets
-      if: secrets.RENDER_DEPLOY_HOOK_URL_DJANGO == '' || secrets.RENDER_DEPLOY_HOOK_URL_AI == ''
-      run: |
-        echo "::warning::One or more Render Deploy Hooks are missing in GitHub Secrets. Deployment skipped."
+        curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL_AI }}
