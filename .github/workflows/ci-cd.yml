@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  # Opt-in to Node.js 24 for GitHub Actions to avoid deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Run Tests
@@ -36,6 +40,8 @@ jobs:
         DEBUG: 'True'
         DATABASE_URL: 'sqlite:///db.sqlite3'
       run: |
+        # Create staticfiles dir to silence WhiteNoise warnings during tests
+        mkdir -p staticfiles
         python manage.py test
 
   deploy:
@@ -46,9 +52,20 @@ jobs:
     
     steps:
     - name: Deploy Django App
+      if: env.DJANGO_HOOK != ''
+      env:
+        DJANGO_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL_DJANGO }}
       run: |
-        curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL_DJANGO }}
+        curl -X POST "$DJANGO_HOOK"
         
     - name: Deploy AI Service
+      if: env.AI_HOOK != ''
+      env:
+        AI_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL_AI }}
       run: |
-        curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL_AI }}
+        curl -X POST "$AI_HOOK"
+
+    - name: Check for Missing Secrets
+      if: secrets.RENDER_DEPLOY_HOOK_URL_DJANGO == '' || secrets.RENDER_DEPLOY_HOOK_URL_AI == ''
+      run: |
+        echo "::warning::One or more Render Deploy Hooks are missing in GitHub Secrets. Deployment skipped."
